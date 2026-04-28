@@ -1,0 +1,225 @@
+%% ============================================================
+%%  Higher-Order HMMs for Human Activity Recognition
+%%  Thesis Presentation Report  –  body: 2 pages, A4, 2-col
+%%  Compile:  pdflatex thesis_report.tex
+%% ============================================================
+\documentclass[10pt,a4paper,twocolumn]{article}
+
+%% ── Packages ────────────────────────────────────────────────
+\usepackage[top=0.6in,bottom=0.6in,left=0.65in,right=0.65in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage[compact]{titlesec}
+\usepackage{fancyhdr}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{multicol}
+
+%% ── Colours ─────────────────────────────────────────────────
+\definecolor{headblue}{RGB}{25,55,120}
+
+%% ── Section formatting ───────────────────────────────────────
+\titleformat{\section}
+  {\normalfont\bfseries\normalsize\color{headblue}}
+  {}{0pt}
+  {\rule[-.25ex]{\columnwidth}{0.4pt}\\\vspace{1pt}}
+\titlespacing{\section}{0pt}{5pt}{2pt}
+
+\titleformat{\subsection}
+  {\normalfont\bfseries\small}
+  {}{0pt}{}
+\titlespacing{\subsection}{0pt}{3pt}{1pt}
+
+%% ── Spacing ──────────────────────────────────────────────────
+\setlength{\parskip}{2pt}
+\setlength{\parindent}{0pt}
+\setlength{\abovedisplayskip}{4pt}
+\setlength{\belowdisplayskip}{4pt}
+\setlength{\abovedisplayshortskip}{2pt}
+\setlength{\belowdisplayshortskip}{2pt}
+\setlength{\columnsep}{14pt}
+
+%% ── Header / Footer ─────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancyhead[L]{\footnotesize\color{headblue}\textit{Higher-Order HMMs for Human Activity Recognition}}
+\fancyhead[R]{\footnotesize\thepage}
+\fancyfoot{}
+
+%% ── List compactness ─────────────────────────────────────────
+\setlist[itemize]{noitemsep,topsep=1pt,parsep=0pt,leftmargin=*}
+
+%% ── Math helpers ─────────────────────────────────────────────
+\DeclareMathOperator{\KL}{KL}
+\DeclareMathOperator{\Dir}{Dir}
+\newcommand{\symKL}{\mathrm{sym\text{-}KL}}
+\newcommand{\lse}{\operatorname*{logsumexp}}
+
+%% ============================================================
+\begin{document}
+\thispagestyle{fancy}
+
+%% ── ABSTRACT ─────────────────────────────────────────────────
+\section*{Abstract}
+
+Standard HMMs applied to Human Activity Recognition (HAR) suffer from three fundamental limitations: \textbf{(1)} Gaussian emissions are geometrically inappropriate for normalized sensor vectors on the probability simplex; \textbf{(2)} the first-order Markov assumption cannot capture multi-step temporal context inherent in realistic activity sequences; and \textbf{(3)} the true number of activity states is unknown and must be fixed a priori.
+This work proposes three corresponding extensions---\textbf{Dirichlet emissions}, a \textbf{K-th order super-state transition tensor}, and \textbf{adaptive state merging via symmetric KL divergence}---implemented from scratch with only \texttt{numpy}/\texttt{scipy}.
+On a controlled synthetic benchmark, the framework automatically reduces the state count from 6 to 3 and achieves \textbf{100\% Viterbi decoding accuracy}.
+
+%% ── PROBLEM STATEMENT ────────────────────────────────────────
+\section*{1\enspace Problem Statement}
+
+HAR uses wearable sensors to classify activities from time-series data. A standard preprocessing step produces normalized feature vectors living on the probability simplex:
+\[
+  o_t \in \Delta^{D-1}=\bigl\{\,x\in\mathbb{R}^D : x_i\geq 0,\;\textstyle\sum_i x_i=1\,\bigr\}.
+\]
+Directly applying a standard HMM to such data introduces three compounding problems:
+
+\begin{center}
+\footnotesize
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Problem} & \textbf{Consequence} \\
+\midrule
+Geometric mismatch   & Mass outside $\Delta^{D-1}$; biased MLE \\
+First-order transitions & Lost multi-step activity context \\
+Unknown state count  & Manual tuning; over/under-specified \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%% ── PROPOSED EXTENSIONS ──────────────────────────────────────
+\section*{2\enspace Proposed Extensions}
+
+\subsection*{2.1\enspace Dirichlet Emissions}
+We replace Gaussian emissions with $\Dir(\alpha_i)$, whose support is exactly the open simplex $\Delta^{D-1}$.
+The concentration vector $\alpha_i\in\mathbb{R}^D_{++}$ provides flexible shape control---uniform, peaked, or sparse.
+MLE of $\alpha_i$ from weighted observations uses L-BFGS-B in log-space, with the analytical gradient derived from the digamma function $\psi(\cdot)$.
+
+\subsection*{2.2\enspace K-th Order Super-States}
+Higher-order dependencies are captured by defining \emph{super-states} as K-tuples $\mathbf{m}=(i_1,\ldots,i_K)\in S^K$.
+Only overlap-consistent transitions are permitted:
+\[
+  (i_1,\ldots,i_K)\;\longrightarrow\;(i_2,\ldots,i_K,j),\quad\forall\,j\in S,
+\]
+encoding the exact K-th order conditional structure while admitting standard forward/backward matrix recursions.
+
+\subsection*{2.3\enspace Adaptive State Merging}
+The model initialises with an over-complete count $N_{\max}$ and merges pairs of states whose emission distributions become statistically indistinguishable during EM.
+The merge criterion is the symmetric KL divergence falling below a threshold $\tau$; merged parameters are pooled by occupancy-weighted averaging.
+
+%% ── MATHEMATICAL FRAMEWORK ───────────────────────────────────
+\section*{3\enspace Mathematical Framework}
+
+\textbf{Extended 5-tuple.}\enspace The model is defined as:
+\[
+  \lambda = \bigl(S,\;\Delta^{D-1},\;\mathbf{P}^{(K)},\;\{\Dir(\alpha_i)\}_{i\in S},\;\pi\bigr).
+\]
+
+\textbf{Dirichlet log-pdf.}\enspace For state $i$ with $\alpha_{i,0}=\sum_d\alpha_{i,d}$:
+\[
+  \ln\phi_i(o)=\ln\Gamma(\alpha_{i,0})-\sum_d\ln\Gamma(\alpha_{i,d})+\sum_d(\alpha_{i,d}-1)\ln o_d.
+\]
+
+\textbf{Transition constraint.}\enspace Valid super-state transitions enforce overlap:
+\[
+  (i_1,\ldots,i_K)\;\xrightarrow{\text{valid}}\;(i_2,\ldots,i_K,j).
+\]
+
+\textbf{Log-space forward recursion.}\enspace Let $\mathbf{m}^{\prime}=(i_2,\ldots,i_K,j)$:
+\begin{align*}
+  \ln\alpha_{t+1}(\mathbf{m}^{\prime})&=\ln\phi_{\mathbf{m}^{\prime}}(o_{t+1})\\
+  &+\operatorname*{lse}_{\mathbf{m}}\!\bigl[\ln\alpha_t(\mathbf{m})+\ln A_{\mathbf{m}\mathbf{m}^{\prime}}\bigr].
+\end{align*}
+
+\textbf{Symmetric KL merge criterion:}
+\[
+  \symKL(\phi_i,\phi_j)=\tfrac{1}{2}\bigl[\KL(\phi_i\|\phi_j)+\KL(\phi_j\|\phi_i)\bigr]<\tau.
+\]
+
+\textbf{Occupancy-weighted parameter pooling after merge:}
+\[
+  \hat{\alpha}_{\mathrm{merged}}=\frac{W_i\,\alpha_i+W_j\,\alpha_j}{W_i+W_j}.
+\]
+
+%% ── IMPLEMENTATION ───────────────────────────────────────────
+\section*{4\enspace Implementation}
+
+The framework is a self-contained Python package built from scratch on \texttt{numpy} and \texttt{scipy} only---no ML libraries.
+Modules: \texttt{emissions.py} (Dirichlet pdf, MLE, KL, merge logic); \texttt{super\_states.py} (K-tuple enumeration, adjacency, remapping); \texttt{inference.py} (stateless \texttt{forward()}, \texttt{backward()}, \texttt{viterbi()} pure functions); \texttt{model.py} (\texttt{HigherOrderHMM}: E-step, M-step, merge, \texttt{fit()}, \texttt{predict()}); \texttt{data.py} (\texttt{generate\_synthetic()}).
+All computations operate in log-space via \texttt{logsumexp} to prevent underflow over long sequences; stateless inference functions are independently unit-testable.
+
+%% ── EXPERIMENTAL RESULTS ─────────────────────────────────────
+\section*{5\enspace Experimental Results}
+
+\textbf{Training configuration.}
+
+\begin{center}
+\footnotesize
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Hyperparameter} & \textbf{Value} \\
+\midrule
+$N_{\max}$ (initial states)   & 6 \\
+$K$ (Markov order)            & 2 \\
+$\tau$ (merge threshold)      & 0.5 \\
+$T$ (sequence length)         & 500 \\
+$D$ (feature dimension)       & 3 \\
+\texttt{max\_iter}            & 80 \\
+\texttt{merge\_interval}      & every 3 iterations \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{State reduction.}\enspace Starting from $N_{\max}=6$, the algorithm automatically discovers the correct state count:
+
+\begin{center}
+\footnotesize
+\begin{tabular}{@{}clc@{}}
+\toprule
+\textbf{After iter} & \textbf{States} & \textbf{sym-KL trigger} \\
+\midrule
+Init         & 6              & ---                              \\
+3            & 5              & $\symKL(3,2)=0.1035<0.5$         \\
+6            & 4              & $\symKL(3,1)=0.3919<0.5$         \\
+6 (cascade)  & \textbf{3}     & $\symKL(3,2)=0.4245<0.5$         \\
+Final        & \textbf{3}     & all pairs $\geq 0.5$             \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Parameter recovery.}\enspace Learned $\hat{\alpha}$ vs.\ ground-truth $\alpha^{*}$ (dominant dimension):
+
+\begin{center}
+\footnotesize
+\begin{tabular}{@{}cccc@{}}
+\toprule
+\textbf{State} & $\hat{\alpha}$ (learned) & $\alpha^*$ (true) & \textbf{Error} \\
+\midrule
+0 & $(11.74,\;1.17,\;1.08)$ & $(10,\;1,\;1)$ & ${\sim}17\%$ \\
+1 & $(1.09,\;1.05,\;10.60)$ & $(1,\;1,\;10)$ & ${\sim}6\%$  \\
+2 & $(0.97,\;8.89,\;0.90)$  & $(1,\;10,\;1)$ & ${\sim}11\%$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Decoding accuracy.}\enspace After majority-vote label alignment:
+\[
+  \mathrm{Accuracy}=\frac{500}{500}=\mathbf{100\%}.
+\]
+
+\textbf{Log-likelihood convergence.}\enspace The LL is monotonically non-decreasing within each EM phase between merges.
+Small dips occur at each merge event (capacity reduction) but recover rapidly---one EM iteration from $+1196$ to $+1247$ nats after the final double merge.
+The final plateau satisfies $\Delta\!\mathrm{LL}<10^{-4}$ for three consecutive iterations.
+
+%% ── CONCLUSION ───────────────────────────────────────────────
+\section*{6\enspace Conclusion}
+
+The proposed framework simultaneously resolves all three fundamental HMM limitations for HAR: Dirichlet emissions match the simplex geometry of normalized sensor data, K-th order super-states encode multi-step temporal dependencies, and adaptive state merging infers the correct model complexity without cross-validation.
+On a synthetic benchmark with known ground truth, the model automatically collapses an over-complete 6-state initialization to the true 3 states and achieves perfect Viterbi decoding accuracy.
+Future work includes evaluation on real-world HAR datasets, Bayesian nonparametric (Dirichlet-process) state-count inference, scaled Dirichlet emission variants, and multi-sequence training.
+
+\end{document}
