@@ -1,0 +1,342 @@
+%=============================================================
+%  Higher-Order HMMs for HAR — 2-Page Thesis Presentation
+%  Compile: pdflatex thesis_report.tex
+%=============================================================
+\documentclass[10pt,a4paper,twocolumn]{article}
+
+%-------- Core packages ----------------------------------------
+\usepackage[top=0.6in,bottom=0.6in,left=0.65in,right=0.65in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{multicol}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+%-------- Accent colour ----------------------------------------
+\definecolor{navyblue}{RGB}{20,50,100}
+\definecolor{steelblue}{RGB}{50,90,160}
+
+%-------- Hyperref styling -------------------------------------
+\hypersetup{
+  colorlinks=true,
+  linkcolor=navyblue,
+  citecolor=steelblue,
+  urlcolor=steelblue
+}
+
+%-------- Section heading format (compact, navy) ---------------
+\titleformat{\section}
+  {\color{navyblue}\normalfont\bfseries\normalsize}
+  {}{0pt}{}[\vspace{-2pt}\color{navyblue}\hrule height 0.4pt\vspace{1pt}]
+
+\titleformat{\subsection}
+  {\normalfont\bfseries\small}
+  {}{0pt}{}
+
+\titlespacing{\section}{0pt}{5pt}{2pt}
+\titlespacing{\subsection}{0pt}{3pt}{1pt}
+
+%-------- Paragraph spacing ------------------------------------
+\setlength{\parskip}{2pt}
+\setlength{\parindent}{0pt}
+\setlength{\columnsep}{14pt}
+
+%-------- Display-math spacing ---------------------------------
+\setlength{\abovedisplayskip}{4pt}
+\setlength{\belowdisplayskip}{4pt}
+\setlength{\abovedisplayshortskip}{2pt}
+\setlength{\belowdisplayshortskip}{2pt}
+
+%-------- List spacing -----------------------------------------
+\setlist[itemize]{noitemsep,topsep=2pt,leftmargin=*}
+\setlist[enumerate]{noitemsep,topsep=2pt,leftmargin=*}
+
+%-------- Custom math operators --------------------------------
+\DeclareMathOperator{\logsumexp}{logsumexp}
+\DeclareMathOperator{\symKL}{sym\text{-}KL}
+\DeclareMathOperator{\Dir}{Dir}
+
+%-------- Header / footer (fancyhdr) ---------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{\color{navyblue}\hrule height 0.4pt}
+\fancyhead[L]{\footnotesize\color{navyblue}\textit{Higher-Order HMMs for Human Activity Recognition}}
+\fancyhead[R]{\footnotesize\color{navyblue}\thepage}
+\fancyfoot{}
+
+%=============================================================
+\begin{document}
+%=============================================================
+
+%%% --------------------------------------------------------
+\section*{\large Abstract}
+%%% --------------------------------------------------------
+
+Standard Hidden Markov Models (HMMs) applied to Human Activity Recognition (HAR)
+suffer from three fundamental limitations: Gaussian emissions are geometrically
+inappropriate for normalized sensor vectors on the probability simplex; the
+first-order Markov assumption fails to capture multi-step temporal dependencies;
+and the true number of activity states must be fixed a priori.
+We propose and implement a novel HMM extension that simultaneously addresses all
+three limitations using \emph{Dirichlet emission distributions}, a \emph{K-th
+order super-state transition tensor}, and an \emph{adaptive state-merging
+algorithm} driven by symmetric KL divergence within the Baum-Welch EM loop.
+Validated on a controlled synthetic benchmark with known ground truth, the
+framework achieves automatic state reduction from $6 \to 3$, correct parameter
+recovery (6--17\% error), and \textbf{100\%} Viterbi decoding accuracy.
+
+%%% --------------------------------------------------------
+\section*{1\quad Problem Statement}
+%%% --------------------------------------------------------
+
+HAR normalizes multi-dimensional sensor readings into unit-sum feature vectors
+that lie on the probability simplex
+$\Delta^{D-1} = \bigl\{x \in \mathbb{R}^D : x_i \geq 0,\; \sum_i x_i = 1\bigr\}$.
+Applying a standard HMM to such data introduces three compounding problems:
+
+\smallskip
+\begin{center}
+\footnotesize
+\renewcommand{\arraystretch}{1.1}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Problem} & \textbf{Consequence} \\
+\midrule
+Gaussian support $\mathbb{R}^D$ & Probability mass outside simplex \\
+First-order transitions & Multi-step context lost \\
+Unknown state count $N$ & Manual tuning; over/under-fitting \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%%% --------------------------------------------------------
+\section*{2\quad Proposed Extensions}
+%%% --------------------------------------------------------
+
+\subsection*{2.1\; Dirichlet Emissions}
+The Dirichlet distribution $\Dir(\alpha_i)$, $\alpha_i \in \mathbb{R}^D_{++}$,
+has support exactly on the open simplex, resolving the geometric mismatch
+completely.  Concentration parameters lack a closed-form weighted MLE; we
+optimize in $\log(\alpha)$ space via L-BFGS-B using the analytical gradient
+derived from the digamma function $\psi$.
+
+\subsection*{2.2\; $K$-th Order Super-States}
+Super-states are $K$-tuples $\mathbf{m} = (i_1, \ldots, i_K)$ with only
+overlap-consistent transitions permitted, encoding $K$-th order dependencies
+while keeping standard forward/backward matrix recursions.
+
+\subsection*{2.3\; Adaptive State Merging}
+The model is initialized over-complete at $N_{\max}$ states.  Every
+\texttt{merge\_interval} EM iterations, pairs whose symmetric KL divergence
+falls below $\tau$ are collapsed via occupancy-weighted parameter pooling,
+automatically discovering the true state count without cross-validation.
+
+%%% --------------------------------------------------------
+\section*{3\quad Mathematical Framework}
+%%% --------------------------------------------------------
+
+\textbf{Extended model 5-tuple.}
+\begin{equation}
+  \lambda = \Bigl(S,\;\Delta^{D-1},\;\mathbf{P}^{(K)},\;
+            \bigl\{\Dir(\alpha_i)\bigr\}_{i\in S},\;\pi\Bigr)
+\end{equation}
+
+\textbf{Dirichlet log-pdf.}\; For state $i$ with $\alpha_{i,0}=\sum_d\alpha_{i,d}$:
+\begin{equation}
+  \ln\phi_i(o) = \ln\Gamma(\alpha_{i,0})
+               - \sum_d \ln\Gamma(\alpha_{i,d})
+               + \sum_d (\alpha_{i,d}-1)\ln o_d
+\end{equation}
+
+\textbf{Overlap-consistent super-state transition.}
+\begin{equation}
+  (i_1,\ldots,i_K) \;\longrightarrow\; (i_2,\ldots,i_K,j)
+  \quad \forall\, j \in S
+\end{equation}
+
+\textbf{Forward recursion (log-space).}
+\begin{equation}
+  \ln\alpha_{t+1}(\mathbf{m}') = \ln\phi_{\mathbf{m}'}(o_{t+1})
+    + \logsumexp_{\mathbf{m}}\!\Big[
+        \ln\alpha_t(\mathbf{m}) + \ln A_{\mathbf{m}\mathbf{m}'}
+      \Big]
+\end{equation}
+
+\textbf{Symmetric KL merge criterion.}
+\begin{equation}
+  \symKL(\phi_i,\phi_j)
+    = \tfrac{1}{2}\bigl[\mathrm{KL}(\phi_i\|\phi_j)
+                       +\mathrm{KL}(\phi_j\|\phi_i)\bigr] < \tau
+\end{equation}
+
+\textbf{Occupancy-weighted merge pooling.}
+\begin{equation}
+  \hat{\alpha}_i = \frac{W_i\cdot\alpha_i + W_j\cdot\alpha_j}{W_i + W_j},
+  \qquad W_k = \sum_t \gamma_t(k)
+\end{equation}
+
+%%% --------------------------------------------------------
+\section*{4\quad Implementation}
+%%% --------------------------------------------------------
+
+Built from scratch using only \texttt{numpy} and \texttt{scipy}; no ML libraries.
+The package is organized as five focused modules:
+
+\smallskip
+\begin{center}
+\footnotesize
+\renewcommand{\arraystretch}{1.1}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Module} & \textbf{Responsibility} \\
+\midrule
+\texttt{emissions.py}    & Dirichlet pdf, MLE (L-BFGS-B), KL, merge \\
+\texttt{super\_states.py}& $K$-tuple enumeration, adjacency, remap \\
+\texttt{inference.py}    & Pure stateless forward / backward / Viterbi \\
+\texttt{model.py}        & HigherOrderHMM orchestrator (E/M/merge) \\
+\texttt{data.py}         & Synthetic sequence generator \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+All computations proceed in log-space via \texttt{logsumexp}, eliminating
+floating-point underflow for sequences of any practical length.  The inference
+functions are stateless pure functions, making them independently testable.
+
+%%% --------------------------------------------------------
+\section*{5\quad Experimental Results}
+%%% --------------------------------------------------------
+
+\subsection*{5.1\; Training Configuration}
+
+\begin{center}
+\footnotesize
+\renewcommand{\arraystretch}{1.1}
+\begin{tabular}{@{}lr@{}}
+\toprule
+\textbf{Hyperparameter} & \textbf{Value} \\
+\midrule
+$N_{\max}$ (initial states) & 6 \\
+$K$ (Markov order)          & 2 \\
+$\tau$ (KL merge threshold) & 0.5 \\
+$T$ (sequence length)       & 500 \\
+$D$ (simplex dimension)     & 3 \\
+\texttt{max\_iter}          & 80 \\
+\texttt{merge\_interval}    & 3 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection*{5.2\; State Reduction}
+
+\begin{center}
+\footnotesize
+\renewcommand{\arraystretch}{1.1}
+\begin{tabular}{@{}clr@{}}
+\toprule
+\textbf{After iter} & \textbf{States} & \textbf{sym-KL trigger} \\
+\midrule
+init  & 6 & $N_{\max}$ \\
+3     & 5 & $\symKL(3,2) = 0.1035$ \\
+6     & 4 & $\symKL(3,1) = 0.3919$ \\
+6 (cascade) & \textbf{3} & $\symKL(3,2) = 0.4245$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The model automatically converges to exactly \textbf{3 states} — the true
+ground-truth count — from a $2\times$ over-complete initialization.
+
+\subsection*{5.3\; Parameter Recovery}
+
+\begin{center}
+\footnotesize
+\renewcommand{\arraystretch}{1.1}
+\begin{tabular}{@{}cllr@{}}
+\toprule
+\textbf{State} & $\hat{\alpha}$ (learned) & $\alpha$ (true) & \textbf{Error} \\
+\midrule
+0 & $(11.74,\,1.17,\,1.08)$ & $(10,\,1,\,1)$ & $\sim$17\% \\
+1 & $(1.09,\,1.05,\,10.60)$ & $(1,\,1,\,10)$ & $\sim$6\%  \\
+2 & $(0.97,\,8.89,\,0.90)$  & $(1,\,10,\,1)$ & $\sim$11\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection*{5.4\; Decoding Accuracy \& Convergence}
+
+After majority-vote label alignment, the Viterbi path achieves
+\[
+  \text{Accuracy} = \frac{500}{500} = \mathbf{100\%}.
+\]
+Log-likelihood is monotonically non-decreasing within each EM phase;
+small drops at merge events (e.g.\ $+1258 \to +1196$ nats at iter~7)
+recover rapidly within one step.  Final convergence: $\Delta\text{LL} < 10^{-4}$
+over 3 consecutive iterations at iter~45.
+
+%%% --------------------------------------------------------
+\section*{6\quad Conclusion}
+%%% --------------------------------------------------------
+
+The proposed framework simultaneously resolves all three core HMM limitations
+for compositional HAR data: Dirichlet emissions respect simplex geometry,
+$K$-th order super-states capture multi-step temporal context, and adaptive
+state merging automatically infers the correct model complexity.
+On the synthetic benchmark the model discovers the true state count without any
+prior knowledge and achieves perfect Viterbi decoding accuracy.
+Future work includes evaluation on real-world HAR datasets, Bayesian
+nonparametric extensions (Dirichlet process HMMs), scaled Dirichlet
+emissions, and efficient multi-sequence training.
+
+%%% --------------------------------------------------------
+\section*{References}
+%%% --------------------------------------------------------
+
+{\footnotesize
+\begin{thebibliography}{9}
+\setlength{\itemsep}{1pt}
+
+\bibitem{baum1970}
+L.\,E.\ Baum, T.\ Petrie, G.\ Soules, N.\ Weiss.
+\textit{A maximization technique occurring in the statistical analysis of
+probabilistic functions of Markov chains}.
+Ann.\ Math.\ Stat., 41(1):164--171, 1970.
+
+\bibitem{viterbi1967}
+A.\,J.\ Viterbi.
+\textit{Error bounds for convolutional codes and an asymptotically
+optimum decoding algorithm}.
+IEEE Trans.\ Inf.\ Theory, 13(2):260--269, 1967.
+
+\bibitem{rabiner1989}
+L.\,R.\ Rabiner.
+\textit{A tutorial on hidden Markov models and selected applications in
+speech recognition}.
+Proc.\ IEEE, 77(2):257--286, 1989.
+
+\bibitem{minka2000}
+T.\ Minka.
+\textit{Estimating a Dirichlet distribution}.
+Technical Report, MIT, 2000.
+
+\bibitem{dupreez1998}
+J.\,A.\ du Preez.
+\textit{Efficient training of high-order hidden Markov models using
+first-order representations}.
+Comput.\ Speech Lang., 12(1):23--39, 1998.
+
+\bibitem{kullback1951}
+S.\ Kullback, R.\,A.\ Leibler.
+\textit{On information and sufficiency}.
+Ann.\ Math.\ Stat., 22(1):79--86, 1951.
+
+\end{thebibliography}
+}
+
+\end{document}
